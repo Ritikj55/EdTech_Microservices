@@ -1,0 +1,19 @@
+package com.notification_service.notification.dto;
+
+import lombok.*;
+
+@Getter
+@Setter
+@AllArgsConstructor
+@NoArgsConstructor
+@ToString
+public class OrderInformation {
+
+    private String orderId;
+    private  String email;
+    private  String userId;
+    private  String userPhone;
+    private  boolean orderPaymentStatus=false;
+    private  boolean orderStatus=false;
+    private  String courseId;
+}

@@ -1,0 +1,208 @@
+version: '3.8'
+services:
+  mongo :
+    image: mongo:7.0.9
+    container_name: mongo_v7
+    ports:
+     - 27017:27017
+    volumes:
+     - ./mongo-data:/data/db/
+
+  mysql_db:
+    image: mysql:8.0
+    container_name: mysql_micro
+    restart: always
+    ports:
+     - 3307:3306
+    environment:
+     - MYSQL_ROOT_PASSWORD=admin
+     - MYSQL_DATABASE=coursedb
+     - MYSQL_USER=user
+     - MYSQL_PASSWORD=user@123
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+  phpmyadmin:
+    image: phpmyadmin
+    container_name: phpmyadmin_micro
+    ports:
+      - 8081:80
+    environment:
+      - PMA_ARBITRARY=1
+      - PMA_HOST=mysql_db
+    depends_on:
+     - mysql_db
+
+  #redis image
+  redis:
+    image: redis:latest
+    container_name: redis_container
+    ports:
+      - "6379:6379"
+    networks:
+      - backend
+
+  #rabbitmq
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq_container
+    ports:
+      - "5672:5672" # RabbitMQ message broker port
+      - "15672:15672" # RabbitMQ management dashboard port
+    environment:
+      RABBITMQ_DEFAULT_USER: guest # Default username
+      RABBITMQ_DEFAULT_PASS: guest # Default password
+      RABBITMQ_DEFAULT_VHOST: "/" # Default virtual host
+    networks:
+      - backend
+
+  discovery-service:
+    image: ritikj99/discovery-service:v1
+    container_name: discovery-service
+    ports:
+      - 8761:8761
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 700m
+
+
+  config-service:
+    image: ritikj99/config:v1
+    container_name: config-server
+    ports:
+      - 9091:9091
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+      - SPRING_RABBITMQ_HOST=rabbitmq
+        SPRING_RABBITMQ_PORT=5672
+        SPRING_RABBITMQ_USERNAME=guest
+        SPRING_RABBITMQ_PASSWORD=guest
+    depends_on:
+      - discovery-service
+      - rabbitmq
+    networks:
+      - backend
+  api-gateway-server:
+    image: ritikj99/api-gateway-service:v1
+    container_name: api-gateway-server
+    ports:
+       - 8086:8086
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+      - SPRING_DATA_REDIS_PORT=6379
+        SPRING_DATA.REDIS.HOST=redis
+    networks:
+      - backend
+  video-service:
+    image: ritikj99/video-service:v1
+    container_name: video-service
+    ports:
+      - 8085:8085
+    networks:
+      - backend
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+        SPRING_CONFIG_IMPORT=optional:configserver:http://config-service:9091
+        SPRING_RABBITMQ_HOST=rabbitmq
+        SPRING_RABBITMQ_PORT=5672
+        SPRING_RABBITMQ_USERNAME=guest
+        SPRING_RABBITMQ_PASSWORD=guest
+        SPRING_DATA_MONGODB_HOST=mongo
+        SPRING_DATA_MONGODB_PORT=27017
+        SPRING_DATA_MONGODB_DATABASE=video-service
+    depends_on:
+      - config-service
+      - discovery-service
+      - mongo
+  course-service:
+    image: ritikj99/course:v1
+    container_name: course-service
+    ports:
+      - 8082:8082
+    networks:
+      - backend
+    environment:
+     - SPRING_DATASOURCE_URL=jdbc:mysql://mysql_db:3307/coursedb?autoReconnect=true&useSSL=false&connectTimeout=30000&socketTimeout=30000&allowPublicKeyRetrieval=true
+     - SPRING_DATASOURCE_USERNAME=user
+     - SPRING_DATASOURCE_PASSWORD=user@123
+     - SPRING_CONFIG_IMPORT=optional:configserver:http://config-service:9091
+     - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+     - SPRING_RABBITMQ_HOST=rabbitmq
+       SPRING_RABBITMQ_PORT=5672
+       SPRING_RABBITMQ_USERNAME=guest
+       SPRING_RABBITMQ_PASSWORD=guest
+    depends_on:
+      - mysql_db
+      - config-service
+      - discovery-service
+      - rabbitmq
+
+  category-service:
+    image: ritikj99/category-service:v1
+    container_name: category-service
+    ports:
+    - 8083:8083
+    environment:
+    - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+    - SPRING_CONFIG_IMPORT=optional:configserver:http://config-service:9091
+      SPRING_RABBITMQ_HOST=rabbitmq
+      SPRING_RABBITMQ_PORT=5672
+      SPRING_RABBITMQ_USERNAME=guest
+      SPRING_RABBITMQ_PASSWORD=guest
+      SPRING_DATA_MONGODB_HOST=mongo
+      SPRING_DATA_MONGODB_PORT=27017
+      SPRING_DATA_MONGODB_DATABASE=Category-service
+    networks:
+     - backend
+    depends_on:
+      - rabbitmq
+      - discovery-service
+      - mongo
+      - config-service
+  order_service:
+    image: ritikj99/order-service:v1
+    container_name: order_service
+    ports:
+    - 9089:9089
+    networks:
+      - backend
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+        SPRING_RABBITMQ_HOST=rabbitmq
+        SPRING_RABBITMQ_PORT=5672
+        SPRING_RABBITMQ_USERNAME=guest
+        SPRING_RABBITMQ_PASSWORD=guest
+    depends_on:
+      - discovery-service
+      - rabbitmq
+  notification-service:
+    image: ritikj99/notification-service:v1
+    container_name: notification-service
+    ports:
+      - 9050:9050
+    networks:
+     - backend
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://discovery-service:8761/eureka/
+        SPRING_RABBITMQ_HOST=rabbitmq
+        SPRING_RABBITMQ_PORT=5672
+        SPRING_RABBITMQ_USERNAME=guest
+        SPRING_RABBITMQ_PASSWORD=guest
+
+networks:
+  backend:
+    driver: "bridge"
+    name: backend
+
+
+
+
+
+
+
+
+
+
+
